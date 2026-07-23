@@ -1,0 +1,30 @@
+# Gradle / Kotlin
+.gradle/
+.kotlin/
+build/
+out/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Runtime databases
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

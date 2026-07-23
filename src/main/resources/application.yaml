@@ -1,0 +1,6 @@
+ktor:
+  deployment:
+    port: "$PORT:8080"
+  application:
+    modules:
+      - com.yuhan8954.application.ApplicationKt.module

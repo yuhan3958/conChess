@@ -1,0 +1,188 @@
+package com.yuhan8954.engine.movement
+
+import com.yuhan8954.engine.geometry.pointOnOpenSegment
+import com.yuhan8954.engine.model.*
+import kotlin.math.abs
+
+/** Registry and implementation for all Continuous Chess movement rules. */
+class PieceMovementRules {
+    private val rules: Map<PieceType, MovementRule> = mapOf(
+        PieceType.ROOK to SlidingRule(SlideMode.ROOK),
+        PieceType.BISHOP to SlidingRule(SlideMode.BISHOP),
+        PieceType.QUEEN to SlidingRule(SlideMode.QUEEN),
+        PieceType.KNIGHT to KnightRule,
+        PieceType.KING to KingRule,
+        PieceType.PAWN to PawnRule,
+    )
+
+    fun ruleFor(type: PieceType): MovementRule = rules.getValue(type)
+}
+
+private enum class SlideMode { ROOK, BISHOP, QUEEN }
+
+private abstract class BaseRule : MovementRule {
+    protected fun commonTargetCheck(state: GameState, piece: Piece, target: Position): MoveValidationResult.Illegal? {
+        val numericTarget = target.numeric()
+        if (!isInsideBoard(numericTarget)) {
+            return MoveValidationResult.Illegal(MoveErrorCode.TARGET_OUTSIDE_BOARD, "Target is outside the board.")
+        }
+        if (samePosition(piece.position, target)) {
+            return MoveValidationResult.Illegal(MoveErrorCode.INVALID_PIECE_MOVEMENT, "A move must change the piece position.")
+        }
+        val occupying = state.pieces.firstOrNull { it.id != piece.id && samePosition(it.position, target) }
+        if (occupying?.color == piece.color) {
+            return MoveValidationResult.Illegal(MoveErrorCode.TARGET_OCCUPIED_BY_ALLY, "Target is occupied by an allied piece.")
+        }
+        if (occupying?.type == PieceType.KING) {
+            return MoveValidationResult.Illegal(MoveErrorCode.KING_CAPTURE_NOT_ALLOWED, "Kings cannot be captured.")
+        }
+        return null
+    }
+
+    protected fun capturedPiece(state: GameState, piece: Piece, target: Position): Piece? =
+        state.pieces.firstOrNull { it.id != piece.id && it.color != piece.color && samePosition(it.position, target) }
+
+    protected fun blocked(state: GameState, piece: Piece, target: Position): Boolean {
+        val start = piece.position.numeric()
+        val end = target.numeric()
+        return state.pieces.any { other ->
+            other.id != piece.id && pointOnOpenSegment(other.position.numeric(), start, end)
+        }
+    }
+}
+
+private class SlidingRule(private val mode: SlideMode) : BaseRule() {
+    override fun validateMove(state: GameState, piece: Piece, target: Position): MoveValidationResult {
+        commonTargetCheck(state, piece, target)?.let { return it }
+        if (!slides(piece.position.numeric(), target.numeric())) {
+            return MoveValidationResult.Illegal(MoveErrorCode.INVALID_PIECE_MOVEMENT, "Invalid sliding movement.")
+        }
+        if (blocked(state, piece, target)) {
+            return MoveValidationResult.Illegal(MoveErrorCode.PATH_BLOCKED, "A piece blocks the path.")
+        }
+        return MoveValidationResult.Legal(target, capturedPiece(state, piece, target))
+    }
+
+    override fun attacks(state: GameState, piece: Piece, target: Position): Boolean =
+        slides(piece.position.numeric(), target.numeric()) && !blocked(state, piece, target)
+
+    private fun slides(start: NumericPosition, end: NumericPosition): Boolean {
+        val dx = abs(end.x - start.x)
+        val dy = abs(end.y - start.y)
+        val rook = dx <= EPSILON || dy <= EPSILON
+        val bishop = abs(dx - dy) <= EPSILON
+        return when (mode) {
+            SlideMode.ROOK -> rook
+            SlideMode.BISHOP -> bishop
+            SlideMode.QUEEN -> rook || bishop
+        }
+    }
+}
+
+private object KnightRule : BaseRule() {
+    override fun validateMove(state: GameState, piece: Piece, target: Position): MoveValidationResult {
+        commonTargetCheck(state, piece, target)?.let { return it }
+        if (!attacks(state, piece, target)) {
+            return MoveValidationResult.Illegal(MoveErrorCode.INVALID_PIECE_MOVEMENT, "Knights must move exactly sqrt(5).")
+        }
+        return MoveValidationResult.Legal(target, capturedPiece(state, piece, target))
+    }
+
+    override fun attacks(state: GameState, piece: Piece, target: Position): Boolean {
+        val start = piece.position.numeric()
+        val end = target.numeric()
+        val dx = end.x - start.x
+        val dy = end.y - start.y
+        return abs(dx * dx + dy * dy - 5.0) <= EPSILON
+    }
+}
+
+private object KingRule : BaseRule() {
+    override fun validateMove(state: GameState, piece: Piece, target: Position): MoveValidationResult {
+        if (!isIntegerCoordinate(target.x.numericValue) || !isIntegerCoordinate(target.y.numericValue)) {
+            return MoveValidationResult.Illegal(MoveErrorCode.INTEGER_COORDINATE_REQUIRED, "Kings must move to integer coordinates.")
+        }
+        val snapped = snapIntegerPosition(target)
+        commonTargetCheck(state, piece, snapped)?.let { return it }
+        if (!attacks(state, piece, snapped)) {
+            return MoveValidationResult.Illegal(MoveErrorCode.INVALID_PIECE_MOVEMENT, "Kings move one adjacent integer point.")
+        }
+        return MoveValidationResult.Legal(snapped, capturedPiece(state, piece, snapped))
+    }
+
+    override fun attacks(state: GameState, piece: Piece, target: Position): Boolean {
+        if (!isIntegerCoordinate(target.x.numericValue) || !isIntegerCoordinate(target.y.numericValue)) return false
+        val start = piece.position.numeric()
+        val end = target.numeric()
+        val dx = abs(end.x - start.x)
+        val dy = abs(end.y - start.y)
+        return isIntegerCoordinate(end.x) && isIntegerCoordinate(end.y) &&
+            dx <= 1.0 + EPSILON && dy <= 1.0 + EPSILON && (dx > EPSILON || dy > EPSILON)
+    }
+}
+
+private object PawnRule : BaseRule() {
+    override fun validateMove(state: GameState, piece: Piece, target: Position): MoveValidationResult {
+        if (!isIntegerCoordinate(target.x.numericValue) || !isIntegerCoordinate(target.y.numericValue)) {
+            return MoveValidationResult.Illegal(MoveErrorCode.INTEGER_COORDINATE_REQUIRED, "Pawns must move to integer coordinates.")
+        }
+        val snapped = snapIntegerPosition(target)
+        commonTargetCheck(state, piece, snapped)?.let { return it }
+        val start = piece.position.numeric()
+        val end = snapped.numeric()
+        val direction = if (piece.color == PieceColor.WHITE) 1.0 else -1.0
+        val dx = end.x - start.x
+        val dy = end.y - start.y
+        val targetPiece = state.pieces.firstOrNull { it.id != piece.id && samePosition(it.position, snapped) }
+        val movingForward = abs(dx) <= EPSILON
+        val oneForward = abs(dy - direction) <= EPSILON
+        val twoForward = abs(dy - 2.0 * direction) <= EPSILON
+        val diagonalCapture = abs(abs(dx) - 1.0) <= EPSILON && oneForward && targetPiece?.color == piece.color.opposite()
+        val enPassantCapture = enPassantCapture(state, piece, snapped)
+
+        if (movingForward && oneForward && targetPiece == null) {
+            return MoveValidationResult.Legal(snapped, null)
+        }
+        val midpoint = numericPosition(start.x, start.y + direction)
+        if (movingForward && twoForward && !piece.hasMoved && targetPiece == null &&
+            state.pieces.none { samePosition(it.position, midpoint) }
+        ) {
+            return MoveValidationResult.Legal(snapped, null)
+        }
+        if (diagonalCapture) {
+            if (targetPiece?.type == PieceType.KING) {
+                return MoveValidationResult.Illegal(MoveErrorCode.KING_CAPTURE_NOT_ALLOWED, "Kings cannot be captured.")
+            }
+            return MoveValidationResult.Legal(snapped, targetPiece)
+        }
+        if (enPassantCapture != null) {
+            return MoveValidationResult.Legal(snapped, enPassantCapture)
+        }
+        return MoveValidationResult.Illegal(MoveErrorCode.INVALID_PIECE_MOVEMENT, "Invalid pawn movement.")
+    }
+
+    override fun attacks(state: GameState, piece: Piece, target: Position): Boolean {
+        if (!isIntegerCoordinate(target.x.numericValue) || !isIntegerCoordinate(target.y.numericValue)) return false
+        val start = piece.position.numeric()
+        val end = target.numeric()
+        val direction = if (piece.color == PieceColor.WHITE) 1.0 else -1.0
+        return abs(abs(end.x - start.x) - 1.0) <= EPSILON && abs(end.y - start.y - direction) <= EPSILON
+    }
+
+    private fun enPassantCapture(state: GameState, piece: Piece, target: Position): Piece? {
+        val last = state.moveHistory.lastOrNull() ?: return null
+        if (last.pieceType != PieceType.PAWN || last.color == piece.color) return null
+        if (last.specialMove != null) return null
+        val start = piece.position.numeric()
+        val end = target.numeric()
+        val lastStart = last.start.numeric()
+        val lastEnd = last.end.numeric()
+        val direction = if (piece.color == PieceColor.WHITE) 1.0 else -1.0
+        val targetEmpty = state.pieces.none { samePosition(it.position, target) }
+        val lastWasDoubleStep = abs(abs(lastEnd.y - lastStart.y) - 2.0) <= EPSILON && abs(lastEnd.x - lastStart.x) <= EPSILON
+        val pawnBeside = abs(lastEnd.y - start.y) <= EPSILON && abs(abs(lastEnd.x - start.x) - 1.0) <= EPSILON
+        val movesBehindPawn = abs(end.x - lastEnd.x) <= EPSILON && abs(end.y - start.y - direction) <= EPSILON
+        if (!targetEmpty || !lastWasDoubleStep || !pawnBeside || !movesBehindPawn) return null
+        return state.pieces.firstOrNull { it.id == last.pieceId && it.color != piece.color && it.type == PieceType.PAWN }
+    }
+}
