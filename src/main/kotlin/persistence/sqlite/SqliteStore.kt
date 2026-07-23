@@ -419,9 +419,9 @@ class SqliteStore(private val databaseFactory: DatabaseFactory) {
         email = getString("email"),
         displayName = getString("display_name"),
         profileImageUrl = getString("profile_image_url"),
-        createdAt = Instant.parse(getString("created_at")),
-        updatedAt = Instant.parse(getString("updated_at")),
-        lastLoginAt = Instant.parse(getString("last_login_at")),
+        createdAt = parseDbInstant(getString("created_at")),
+        updatedAt = parseDbInstant(getString("updated_at")),
+        lastLoginAt = parseDbInstant(getString("last_login_at")),
     )
 
     private fun ResultSet.toRoom(): FriendlyRoom = FriendlyRoom(
@@ -431,7 +431,7 @@ class SqliteStore(private val databaseFactory: DatabaseFactory) {
         guestUserId = getNullableLong("guest_user_id"),
         gameId = getString("game_id"),
         status = RoomStatus.valueOf(getString("status")),
-        createdAt = Instant.parse(getString("created_at")),
+        createdAt = parseDbInstant(getString("created_at")),
         joinedAt = getNullableInstant("joined_at"),
         finishedAt = getNullableInstant("finished_at"),
         expiresAt = getNullableInstant("expires_at"),
@@ -468,7 +468,7 @@ class SqliteStore(private val databaseFactory: DatabaseFactory) {
         yExpression = getString("end_y_expression"),
         capturedPieceId = getString("captured_piece_id"),
         specialMove = getString("special_move")?.let(SpecialMoveType::valueOf),
-        createdAt = Instant.parse(getString("created_at")),
+        createdAt = parseDbInstant(getString("created_at")),
     )
 
     private fun ResultSet.toMatchHistoryItem(userId: Long): MatchHistoryItem {
@@ -493,7 +493,12 @@ class SqliteStore(private val databaseFactory: DatabaseFactory) {
         return if (wasNull()) null else value
     }
 
-    private fun ResultSet.getNullableInstant(column: String): Instant? = getString(column)?.let(Instant::parse)
+    private fun ResultSet.getNullableInstant(column: String): Instant? = getString(column)?.let(::parseDbInstant)
+
+    private fun parseDbInstant(value: String): Instant =
+        runCatching { Instant.parse(value) }.getOrElse {
+            Instant.parse(value.replace(' ', 'T') + "Z")
+        }
 }
 
 /** Persisted game row plus decoded state snapshot. */
