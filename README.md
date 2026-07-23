@@ -92,6 +92,42 @@ Continuous Chess는 일반 체스의 8x8 격자를 시각적 기준으로 쓰되
 .\gradlew.bat build
 ```
 
+## Fly.io 배포
+
+Fly.io의 Dockerfile 프리셋 선택 화면에서는 `Dockerfile`을 사용하면 됩니다. 이 프로젝트의 Dockerfile은 Gradle로 배포용 런처를 만든 뒤 JRE 이미지에서 Ktor 서버를 실행합니다.
+
+Fly 앱에는 최소한 다음 secrets를 설정해야 합니다.
+
+```powershell
+fly secrets set GOOGLE_CLIENT_ID="..."
+fly secrets set GOOGLE_CLIENT_SECRET="..."
+fly secrets set GOOGLE_REDIRECT_URI="https://YOUR_APP.fly.dev/auth/google/callback"
+fly secrets set SESSION_SECRET="긴_랜덤_문자열"
+fly secrets set APP_BASE_URL="https://YOUR_APP.fly.dev"
+fly secrets set ENVIRONMENT="production"
+```
+
+SQLite 파일은 기본적으로 컨테이너의 `/data/conchess.sqlite`를 사용합니다. 데이터를 유지하려면 Fly volume을 만들고 `/data`에 마운트하세요.
+
+```powershell
+fly volumes create conchess_data --size 1
+```
+
+`fly.toml`에는 다음처럼 8080 포트와 `/data` 마운트를 둡니다.
+
+```toml
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[mounts]]
+  source = "conchess_data"
+  destination = "/data"
+```
+
 ## 데이터베이스와 마이그레이션
 
 애플리케이션 시작 시 `schema_migrations` 테이블을 확인하고 아직 적용되지 않은 SQL만 실행합니다. 기존 운영 DB 파일을 삭제하거나 무작정 재생성하지 않습니다.

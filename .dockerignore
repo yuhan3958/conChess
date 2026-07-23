@@ -1,0 +1,12 @@
+.git
+.gradle
+.idea
+.kotlin
+build
+*.iml
+.env
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+Dockerfile
+README.md
