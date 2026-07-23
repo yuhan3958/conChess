@@ -18,9 +18,12 @@ import io.ktor.server.sessions.sessions
 import io.ktor.server.sessions.set
 import java.security.SecureRandom
 import java.util.Base64
+import org.slf4j.LoggerFactory
 
 /** Registers login, logout, and current-user routes. */
 fun Route.authRoutes(oauth: GoogleOAuthService, store: SqliteStore) {
+    val logger = LoggerFactory.getLogger("AuthRoutes")
+
     get("/auth/google/login") {
         val state = oauth.createState()
         val csrf = call.sessions.get<UserSession>()?.csrfToken ?: randomToken()
@@ -36,7 +39,8 @@ fun Route.authRoutes(oauth: GoogleOAuthService, store: SqliteStore) {
             call.respond(HttpStatusCode.BadRequest, ApiError("OAUTH_STATE_INVALID", "OAuth login could not be verified."))
             return@get
         }
-        val userId = runCatching { oauth.finishLogin(code, state) }.getOrElse {
+        val userId = runCatching { oauth.finishLogin(code, state) }.getOrElse { cause ->
+            logger.warn("Google OAuth login failed: {}", cause.message)
             call.respond(HttpStatusCode.Unauthorized, ApiError("OAUTH_LOGIN_FAILED", "Google login failed."))
             return@get
         }
