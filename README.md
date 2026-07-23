@@ -128,6 +128,29 @@ fly volumes create conchess_data --size 1
   destination = "/data"
 ```
 
+배포 DB를 직접 확인하거나 수정해야 한다면 실행 중인 머신에 접속해 SQLite CLI를 사용합니다.
+
+```powershell
+fly ssh console -a conchess
+sqlite3 /data/conchess.sqlite
+```
+
+자주 쓰는 SQLite 명령:
+
+```sql
+.tables
+.schema users
+SELECT id, google_subject, display_name, last_login_at FROM users;
+UPDATE users SET display_name = 'New Name' WHERE id = 1;
+.quit
+```
+
+운영 DB를 직접 수정하기 전에는 가능하면 백업을 먼저 받으세요.
+
+```powershell
+fly ssh sftp get /data/conchess.sqlite -a conchess
+```
+
 ## 데이터베이스와 마이그레이션
 
 애플리케이션 시작 시 `schema_migrations` 테이블을 확인하고 아직 적용되지 않은 SQL만 실행합니다. 기존 운영 DB 파일을 삭제하거나 무작정 재생성하지 않습니다.
