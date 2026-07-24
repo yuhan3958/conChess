@@ -22,7 +22,14 @@ async function api(path, options = {}) {
   if (csrfToken && options.method && options.method !== "GET") headers["X-CSRF-Token"] = csrfToken;
   const response = await fetch(path, Object.assign({}, options, {headers, credentials: "same-origin"}));
   if (!response.ok) {
-    const error = await response.json().catch(() => ({code: "HTTP_ERROR", message: response.statusText}));
+    const text = await response.text();
+    let error;
+    try {
+      error = JSON.parse(text);
+    } catch (_) {
+      error = {code: "HTTP_ERROR", message: text || response.statusText};
+    }
+    error.status = response.status;
     throw error;
   }
   return response.json();
@@ -146,7 +153,7 @@ async function saveProfile() {
     message.textContent = "Saved.";
     await dashboard();
   } catch (error) {
-    message.textContent = error.message || "Profile save failed.";
+    message.textContent = formatApiError(error, "Profile save failed.");
   }
 }
 
@@ -170,10 +177,15 @@ async function uploadProfileImage(event) {
     message.textContent = "Uploaded.";
     await dashboard();
   } catch (error) {
-    message.textContent = error.message || "Avatar upload failed.";
+    message.textContent = formatApiError(error, "Avatar upload failed.");
   } finally {
     event.target.value = "";
   }
+}
+
+function formatApiError(error, fallback) {
+  const parts = [error.status, error.code, error.message].filter(Boolean);
+  return parts.length ? parts.join(" ") : fallback;
 }
 
 function readFileAsDataUrl(file) {

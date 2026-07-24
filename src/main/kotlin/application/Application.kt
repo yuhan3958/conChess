@@ -75,6 +75,7 @@ fun Application.module() {
     install(CORS) {
         allowMethod(HttpMethod.Get)
         allowMethod(HttpMethod.Post)
+        allowMethod(HttpMethod.Patch)
         allowHeader(HttpHeaders.ContentType)
         allowHeader("X-CSRF-Token")
         allowCredentials = true
