@@ -4,6 +4,9 @@ import com.yuhan8954.engine.model.InstantIsoSerializer
 import kotlinx.serialization.Serializable
 import java.time.Instant
 
+@Serializable
+enum class UserRole { USER, ADMIN }
+
 /** Internal user record keyed by Google subject, not email. */
 @Serializable
 data class User(
@@ -12,6 +15,9 @@ data class User(
     val email: String?,
     val displayName: String?,
     val profileImageUrl: String?,
+    val role: UserRole = UserRole.USER,
+    @Serializable(with = InstantIsoSerializer::class)
+    val bannedAt: Instant? = null,
     @Serializable(with = InstantIsoSerializer::class)
     val createdAt: Instant,
     @Serializable(with = InstantIsoSerializer::class)
@@ -26,4 +32,5 @@ data class AuthenticatedUser(
     val userId: Long,
     val displayName: String?,
     val profileImageUrl: String?,
+    val role: UserRole = UserRole.USER,
 )

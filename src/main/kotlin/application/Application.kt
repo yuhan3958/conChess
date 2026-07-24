@@ -18,6 +18,7 @@ import com.yuhan8954.room.InviteCodeGenerator
 import com.yuhan8954.routes.authRoutes
 import com.yuhan8954.routes.gameRoutes
 import com.yuhan8954.routes.historyRoutes
+import com.yuhan8954.routes.adminRoutes
 import com.yuhan8954.routes.roomRoutes
 import com.yuhan8954.websocket.GameSessionManager
 import com.yuhan8954.websocket.GameWebSocketHandler
@@ -42,11 +43,14 @@ import io.ktor.server.sessions.Sessions
 import io.ktor.server.sessions.cookie
 import io.ktor.server.sessions.sessions
 import io.ktor.server.websocket.WebSockets
+import io.ktor.server.http.content.staticFiles
 import io.ktor.server.http.content.staticResources
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 import java.security.MessageDigest
-import java.time.Duration
+import java.io.File
+import java.nio.file.Files
+import java.nio.file.Path
 
 /** Ktor application module wiring configuration, persistence, routes, and WebSockets. */
 fun Application.module() {
@@ -61,6 +65,7 @@ fun Application.module() {
     val rooms = FriendlyRoomService(store, engine, InviteCodeGenerator(), HostPlaysWhiteStrategy(), config)
     val games = GameApplicationService(store, engine, aiUser.id, AiMovePlanner(engine))
     val sessions = GameSessionManager()
+    Files.createDirectories(Path.of(config.profileImageStoragePath))
 
     install(DefaultHeaders)
     install(CallLogging)
@@ -103,11 +108,14 @@ fun Application.module() {
 
     routing {
         staticResources("/static", "static")
+        staticFiles("/profile-images", File(config.profileImageStoragePath))
         get("/") { call.respondText(indexHtml(), ContentType.Text.Html) }
         get("/game/join/{inviteCode}") { call.respondText(indexHtml(), ContentType.Text.Html) }
         get("/game/{gameId}") { call.respondText(indexHtml(), ContentType.Text.Html) }
         get("/history") { call.respondText(indexHtml(), ContentType.Text.Html) }
-        authRoutes(oauth, store)
+        get("/admin") { call.respondText(indexHtml(), ContentType.Text.Html) }
+        authRoutes(oauth, store, config.profileImageStoragePath)
+        adminRoutes(currentUser, store)
         roomRoutes(currentUser, rooms)
         gameRoutes(currentUser, games, store)
         historyRoutes(currentUser, store)

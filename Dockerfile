@@ -26,6 +26,7 @@ WORKDIR /app
 ENV ENVIRONMENT=production
 ENV PORT=8080
 ENV DATABASE_PATH=/data/conchess.sqlite
+ENV PROFILE_IMAGE_STORAGE_PATH=uploads/profile-images
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends sqlite3 \

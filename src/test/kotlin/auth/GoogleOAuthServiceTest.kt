@@ -19,7 +19,7 @@ class GoogleOAuthServiceTest {
         SchemaMigrator(factory).migrate()
         val store = SqliteStore(factory)
         val service = GoogleOAuthService(
-            AppConfig("client", "secret", "http://localhost/callback", "session-secret", db.absolutePath, "http://localhost", "test"),
+            AppConfig("client", "secret", "http://localhost/callback", "session-secret", db.absolutePath, "http://localhost", "test", "uploads/profile-images"),
             store,
             object : OAuthClient {
                 override fun exchangeAndVerify(code: String, expectedState: String): GoogleProfile =
@@ -27,8 +27,10 @@ class GoogleOAuthServiceTest {
             },
         )
         val first = service.finishLogin("code", "state")
+        store.updateUserProfile(first, "Custom Alice", "/profile-images/alice.png", java.time.Instant.EPOCH)
         val second = service.finishLogin("code", "state")
         assertEquals(first, second)
-        assertEquals("Alice", store.findUser(first)?.displayName)
+        assertEquals("Custom Alice", store.findUser(first)?.displayName)
+        assertEquals("/profile-images/alice.png", store.findUser(first)?.profileImageUrl)
     }
 }

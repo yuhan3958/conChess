@@ -1,5 +1,6 @@
 const app = document.getElementById("app");
 const logoutButton = document.getElementById("logoutButton");
+const adminLink = document.getElementById("adminLink");
 let me = null;
 let csrfToken = null;
 let ws = null;
@@ -33,10 +34,12 @@ async function loadMe() {
     me = data.user;
     csrfToken = data.csrfToken;
     logoutButton.classList.remove("hidden");
+    adminLink.classList.toggle("hidden", me.role !== "ADMIN");
   } catch (_) {
     me = null;
     csrfToken = null;
     logoutButton.classList.add("hidden");
+    adminLink.classList.add("hidden");
   }
 }
 
@@ -72,7 +75,15 @@ async function dashboard() {
         <div class="card">
           <div class="profile">
             ${me.profileImageUrl ? `<img class="avatar" src="${me.profileImageUrl}" alt="">` : `<div class="avatar"></div>`}
-            <div><strong>${escapeHtml(me.displayName || "사용자")}</strong><div class="muted">친선전 계정</div></div>
+            <div><strong class="${me.role === "ADMIN" ? "adminName" : ""}">${escapeHtml(me.displayName || "사용자")}</strong><div class="muted">친선전 계정</div></div>
+          </div>
+          <div class="profileEditor">
+            <label>Nickname<input id="displayNameInput" maxlength="32" value="${escapeHtml(me.displayName || "")}"></label>
+            <div class="actions">
+              <button id="saveProfile" type="button">Save profile</button>
+              <label class="button fileButton">Upload avatar<input id="profileImageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label>
+            </div>
+            <div id="profileMessage" class="muted"></div>
           </div>
           <div class="actions">
             <button id="createRoom" class="primary" type="button">새 친선전</button>
@@ -100,6 +111,8 @@ async function dashboard() {
     const room = await api("/api/rooms", {method: "POST", body: "{}"});
     location.href = `/game/join/${room.inviteCode}`;
   };
+  document.getElementById("saveProfile").onclick = saveProfile;
+  document.getElementById("profileImageInput").onchange = uploadProfileImage;
   document.getElementById("createAiGame").onclick = async () => {
     const minutes = Number(document.getElementById("initialMinutes").value || 10);
     const increment = Number(document.getElementById("incrementSeconds").value || 0);
@@ -116,6 +129,60 @@ async function dashboard() {
     const code = document.getElementById("inviteCode").value.trim();
     if (code) location.href = `/game/join/${encodeURIComponent(code)}`;
   };
+}
+
+async function saveProfile() {
+  const input = document.getElementById("displayNameInput");
+  const message = document.getElementById("profileMessage");
+  const displayName = input.value.trim();
+  if (!displayName || displayName.length > 32) {
+    message.textContent = "Nickname must be 1 to 32 characters.";
+    return;
+  }
+  message.textContent = "Saving...";
+  try {
+    const result = await api("/api/me", {method: "PATCH", body: JSON.stringify({displayName})});
+    me = result.user;
+    message.textContent = "Saved.";
+    await dashboard();
+  } catch (error) {
+    message.textContent = error.message || "Profile save failed.";
+  }
+}
+
+async function uploadProfileImage(event) {
+  const file = event.target.files && event.target.files[0];
+  const message = document.getElementById("profileMessage");
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) {
+    message.textContent = "Avatar image must be up to 2 MB.";
+    event.target.value = "";
+    return;
+  }
+  message.textContent = "Uploading...";
+  try {
+    const dataBase64 = await readFileAsDataUrl(file);
+    const result = await api("/api/me/profile-image", {
+      method: "POST",
+      body: JSON.stringify({fileName: file.name, contentType: file.type, dataBase64})
+    });
+    me = result.user;
+    message.textContent = "Uploaded.";
+    await dashboard();
+  } catch (error) {
+    message.textContent = error.message || "Avatar upload failed.";
+  } finally {
+    event.target.value = "";
+  }
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("File read failed."));
+    reader.readAsDataURL(file);
+  });
 }
 
 function statsView(stats) {
@@ -482,6 +549,64 @@ async function historyView() {
   app.innerHTML = `<section class="grid"><h1>전적</h1>${statsView(stats)}<div class="card">${matchesView(matches.items)}</div></section>`;
 }
 
+async function adminView() {
+  if (me.role !== "ADMIN") {
+    app.innerHTML = `<section class="card">Admin role is required.</section>`;
+    return;
+  }
+  const data = await api("/api/admin/users?page=0&size=100");
+  app.innerHTML = `
+    <section class="grid">
+      <h1>Admin</h1>
+      <div class="card">
+        <h2>Users</h2>
+        <div class="adminTable">
+          ${data.users.map(adminUserRow).join("")}
+        </div>
+      </div>
+      <div id="adminDetail" class="grid hidden"></div>
+    </section>`;
+  document.querySelectorAll("[data-admin-action]").forEach(button => {
+    button.onclick = () => adminAction(button.dataset.adminAction, Number(button.dataset.userId));
+  });
+}
+
+function adminUserRow(user) {
+  const banned = Boolean(user.bannedAt);
+  const nameClass = user.role === "ADMIN" ? "adminName" : "";
+  return `
+    <div class="adminUserRow">
+      <div class="profile">
+        ${user.profileImageUrl ? `<img class="avatar" src="${user.profileImageUrl}" alt="">` : `<div class="avatar"></div>`}
+        <div>
+          <strong class="${nameClass}">#${user.id} ${escapeHtml(user.displayName || "user")}</strong>
+          <div class="muted">${escapeHtml(user.email || "")} ${user.role}${banned ? " BANNED" : ""}</div>
+        </div>
+      </div>
+      <div class="actions">
+        <button data-admin-action="stats" data-user-id="${user.id}" type="button">Stats</button>
+        <button data-admin-action="${banned ? "unban" : "ban"}" data-user-id="${user.id}" class="${banned ? "" : "danger"}" type="button">${banned ? "Unban" : "Ban"}</button>
+      </div>
+    </div>`;
+}
+
+async function adminAction(action, userId) {
+  if (action === "stats") {
+    const [stats, matches] = await Promise.all([
+      api(`/api/admin/users/${userId}/stats`),
+      api(`/api/admin/users/${userId}/matches?page=0&size=20`)
+    ]);
+    const detail = document.getElementById("adminDetail");
+    detail.classList.remove("hidden");
+    detail.innerHTML = `<h2>User #${userId}</h2>${statsView(stats)}<div class="card"><h3>Matches</h3>${matchesView(matches.items)}</div>`;
+    return;
+  }
+  if (action === "ban" || action === "unban") {
+    await api(`/api/admin/users/${userId}/${action}`, {method: "POST", body: "{}"});
+    await adminView();
+  }
+}
+
 function roundCoord(value) {
   return Math.round(value * 100000) / 100000;
 }
@@ -497,5 +622,6 @@ function escapeHtml(value) {
   if (path.startsWith("/game/join/")) return joinRoomView(decodeURIComponent(path.split("/").pop()));
   if (path.startsWith("/game/")) return gameView(decodeURIComponent(path.split("/").pop()));
   if (path === "/history") return historyView();
+  if (path === "/admin") return adminView();
   return dashboard();
 })();

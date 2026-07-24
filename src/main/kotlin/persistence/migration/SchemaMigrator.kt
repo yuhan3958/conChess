@@ -114,5 +114,10 @@ class SchemaMigrator(private val databaseFactory: DatabaseFactory) {
         2 to """
             ALTER TABLE moves ADD COLUMN special_move TEXT
         """.trimIndent(),
+        3 to """
+            ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'USER'
+            -- statement
+            ALTER TABLE users ADD COLUMN banned_at TEXT
+        """.trimIndent(),
     )
 }

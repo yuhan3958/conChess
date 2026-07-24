@@ -10,6 +10,7 @@ import com.yuhan8954.room.FriendlyRoom
 import com.yuhan8954.room.PlayerColors
 import com.yuhan8954.room.RoomStatus
 import com.yuhan8954.user.User
+import com.yuhan8954.user.UserRole
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.sql.Connection
@@ -41,30 +42,67 @@ class SqliteStore(private val databaseFactory: DatabaseFactory) {
                     ps.setString(7, now.toString())
                     ps.executeUpdate()
                     val id = ps.generatedKeys.use { keys -> keys.next(); keys.getLong(1) }
-                    User(id, subject, email, displayName, imageUrl, now, now, now)
+                    User(id, subject, email, displayName, imageUrl, UserRole.USER, null, now, now, now)
                 }
             } else {
                 connection.prepareStatement(
                     """
-                    UPDATE users SET email = ?, display_name = ?, profile_image_url = ?, updated_at = ?, last_login_at = ?
+                    UPDATE users SET email = ?, updated_at = ?, last_login_at = ?
                     WHERE id = ?
                     """.trimIndent(),
                 ).use { ps ->
                     ps.setString(1, email)
-                    ps.setString(2, displayName)
-                    ps.setString(3, imageUrl)
-                    ps.setString(4, now.toString())
-                    ps.setString(5, now.toString())
-                    ps.setLong(6, existing.id)
+                    ps.setString(2, now.toString())
+                    ps.setString(3, now.toString())
+                    ps.setLong(4, existing.id)
                     ps.executeUpdate()
                 }
-                existing.copy(email = email, displayName = displayName, profileImageUrl = imageUrl, updatedAt = now, lastLoginAt = now)
+                existing.copy(email = email, updatedAt = now, lastLoginAt = now)
             }
             connection.commit()
             user
         }
 
     fun findUser(id: Long): User? = databaseFactory.connection().use { connection -> findUser(connection, id) }
+
+    fun listUsers(page: Int, size: Int): List<User> =
+        databaseFactory.connection().use { connection ->
+            val limit = size.coerceIn(1, 100)
+            val offset = page.coerceAtLeast(0) * limit
+            connection.prepareStatement("SELECT * FROM users ORDER BY id ASC LIMIT ? OFFSET ?").use { ps ->
+                ps.setInt(1, limit)
+                ps.setInt(2, offset)
+                ps.executeQuery().use { rs -> buildList { while (rs.next()) add(rs.toUser()) } }
+            }
+        }
+
+    fun setUserBan(userId: Long, bannedAt: Instant?): User? =
+        databaseFactory.connection().use { connection ->
+            connection.prepareStatement("UPDATE users SET banned_at = ?, updated_at = ? WHERE id = ?").use { ps ->
+                ps.setString(1, bannedAt?.toString())
+                ps.setString(2, Instant.now().toString())
+                ps.setLong(3, userId)
+                if (ps.executeUpdate() != 1) return@use null
+            }
+            findUser(connection, userId)
+        }
+
+    fun updateUserProfile(userId: Long, displayName: String?, profileImageUrl: String?, now: Instant): User? =
+        databaseFactory.connection().use { connection ->
+            connection.prepareStatement(
+                """
+                UPDATE users SET display_name = ?, profile_image_url = COALESCE(?, profile_image_url), updated_at = ?
+                WHERE id = ?
+                """.trimIndent(),
+            ).use { ps ->
+                ps.setString(1, displayName)
+                ps.setString(2, profileImageUrl)
+                ps.setString(3, now.toString())
+                ps.setLong(4, userId)
+                if (ps.executeUpdate() != 1) return@use null
+            }
+            findUser(connection, userId)
+        }
 
     fun ensureAiUser(now: Instant): User =
         upsertGoogleUser("local-ai-opponent", null, "Continuous Chess AI", null, now)
@@ -419,6 +457,8 @@ class SqliteStore(private val databaseFactory: DatabaseFactory) {
         email = getString("email"),
         displayName = getString("display_name"),
         profileImageUrl = getString("profile_image_url"),
+        role = runCatching { UserRole.valueOf(getString("role") ?: UserRole.USER.name) }.getOrDefault(UserRole.USER),
+        bannedAt = getNullableInstant("banned_at"),
         createdAt = parseDbInstant(getString("created_at")),
         updatedAt = parseDbInstant(getString("updated_at")),
         lastLoginAt = parseDbInstant(getString("last_login_at")),

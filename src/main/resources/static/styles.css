@@ -66,6 +66,20 @@ input {
 }
 .profile { display: flex; align-items: center; gap: 12px; }
 .avatar { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; background: var(--line); }
+.profileEditor { display: grid; gap: 8px; margin-top: 14px; }
+.profileEditor label { display: grid; gap: 5px; color: var(--muted); font-size: 13px; }
+.fileButton { display: inline-flex; align-items: center; justify-content: center; }
+.fileButton input { display: none; }
+.adminName { color: #d56b1f; }
+.adminTable { display: grid; gap: 10px; }
+.adminUserRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 0;
+}
 .muted { color: var(--muted); }
 .hidden { display: none !important; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }

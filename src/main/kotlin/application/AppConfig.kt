@@ -12,6 +12,7 @@ data class AppConfig(
     val databasePath: String,
     val appBaseUrl: String,
     val environment: String,
+    val profileImageStoragePath: String,
 ) {
     val secureCookies: Boolean = environment.equals("production", ignoreCase = true)
 
@@ -26,6 +27,7 @@ data class AppConfig(
             databasePath = env("DATABASE_PATH", "identifier.sqlite"),
             appBaseUrl = env("APP_BASE_URL", "http://localhost:8080"),
             environment = env("ENVIRONMENT", "development"),
+            profileImageStoragePath = env("PROFILE_IMAGE_STORAGE_PATH", "uploads/profile-images"),
         )
 
         private fun env(name: String, default: String): String =
